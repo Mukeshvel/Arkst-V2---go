@@ -18,7 +18,7 @@ export function parseIdentityEnvironment(
     !url ||
     !key ||
     !env.APP_ORIGIN ||
-    !['local', 'hosted'].includes(env.APP_ENV ?? '')
+    !['local', 'local-cloud-test', 'hosted'].includes(env.APP_ENV ?? '')
   )
     throw invalid();
   let endpoint: URL;
@@ -40,18 +40,30 @@ export function parseIdentityEnvironment(
     )
       throw invalid();
   }
-  const local = env.APP_ENV === 'local';
+  const cloudTest = env.APP_ENV === 'local-cloud-test';
+  const local = env.APP_ENV === 'local' || cloudTest;
   if (
     env.GOOGLE_OAUTH_ENABLED &&
     !['true', 'false'].includes(env.GOOGLE_OAUTH_ENABLED)
   )
     throw invalid();
-  if (
-    local
-      ? !isLoopback(endpoint.hostname) || !isLoopback(app.hostname)
-      : endpoint.protocol !== 'https:' || app.protocol !== 'https:'
-  )
+  if (env.APP_ENV === 'local') {
+    if (!isLoopback(endpoint.hostname) || !isLoopback(app.hostname))
+      throw invalid();
+  } else if (cloudTest) {
+    const testProjectRef = env.SUPABASE_TEST_PROJECT_REF;
+    if (
+      !testProjectRef ||
+      !/^[a-z0-9]{20}$/.test(testProjectRef) ||
+      endpoint.protocol !== 'https:' ||
+      endpoint.port !== '' ||
+      endpoint.hostname !== `${testProjectRef}.supabase.co` ||
+      !isLoopback(app.hostname)
+    )
+      throw invalid();
+  } else if (endpoint.protocol !== 'https:' || app.protocol !== 'https:') {
     throw invalid();
+  }
   // This is a configuration guard, not JWT authentication. Supabase verifies sessions.
   if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) {
     try {
